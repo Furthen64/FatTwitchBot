@@ -2,6 +2,7 @@ using AsyncAwaitBestPractices;
 using FatTwitchBotA;
 using FatTwitchBotA.Utils;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq.Expressions;
@@ -13,11 +14,14 @@ using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Timers;
+
 namespace SimpleTwitchBot
 {
 
-  // TwitchBott wraps the TwitchBotCore and becomes the poll bot alextria wants.
-
+  
+  /// <summary>
+  /// TwitchBott wraps the TwitchBotCore for easy use.
+  /// </summary>
   public class TwitchBott
   {
     private TwitchConfig? cfg = null;
@@ -42,26 +46,38 @@ namespace SimpleTwitchBot
       cfg.channelname = "fayt64";
 
       var twBotCore = TwitchBotCore.Instance;
-      twBotCore.initialize(cfg); // (untested) !!
+      twBotCore.initialize(cfg); 
     }
 
+    // (--+)     
     // Main bot logic is here:
-    // * Join Channel
-    // loop
-    // {
-    //    Handle each type of !command
-    //    Count votes
-    //    Issue Poll Timers
-    // }
-    // (--+) 
+    //
+    // > Join Channel
+    // > loop
+    //   {
+    //      > Handle each type of !command
+    //      > Poll: Count votes 
+    //      > Poll: Issue Poll Timers
+    //   } 
+
     public async Task runBotAsync()  // Does not return value
     {
       // TODO: this code can get stuck forever waiting!
-      var twBotCore = TwitchBotCore.Instance; // (untested) singleton!      
+      var twBotCore = TwitchBotCore.Instance; // singleton
 
       Console.WriteLine("runBotAsync> running SafeFireAndForget:");
       await Task.Delay(500);
-      twBotCore.Start().SafeFireAndForget();
+      
+      
+      
+      twBotCore.Start().SafeFireAndForget(); 
+
+      // .... but because of the way .NET handles Tasks, the Task is run synchronously until the first await keyword is reached.
+      // https://github.com/brminnick/AsyncAwaitBestPractices/issues/65
+
+
+
+
       Console.WriteLine("runBotAsync> done");
 
       // sanity checks
@@ -195,6 +211,8 @@ namespace SimpleTwitchBot
     public event TwitchChatEventHandler OnMessage = delegate { };
     public delegate void TwitchChatEventHandler(object sender, TwitchChatMessage e);
 
+    private DateTime startTime;
+
 
 
     // (---) 
@@ -209,8 +227,19 @@ namespace SimpleTwitchBot
 
     public async Task Start()
     {
+      await Task.Yield(); // Trick to start the concurrency in .NET 
+
+     
+      // Sanity check
+      if(twSettings == null)  
+      {
+           Console.WriteLine("TwitchBotCore> Start failed, twSettings is null.");
+        return ;
+      }
+
       try
       {
+        // Connect to Twitch
         var tcpClient = new TcpClient();
         await tcpClient.ConnectAsync(ip, port);
         SslStream sslStream = new SslStream(
@@ -230,7 +259,7 @@ namespace SimpleTwitchBot
         await streamWriter.WriteLineAsync($"NICK {twSettings.botUsername}");
 
         connected.SetResult(0);
-
+        startTime = DateTime.Now;
 
         while (!quitting)
         {
@@ -245,7 +274,7 @@ namespace SimpleTwitchBot
 
             if (line.StartsWith("PING"))
             {
-              Console.WriteLine("PONG");
+              Console.WriteLine($"TwitchBotCore {DateTime.Now}> PING? PONG!");
               await streamWriter.WriteLineAsync($"PONG {split[1]}");
             }
 
@@ -272,12 +301,12 @@ namespace SimpleTwitchBot
 
         }
 
-        Console.WriteLine("TwitchBotCore> Quitting.");
+        Console.WriteLine($"TwitchBotCore  {DateTime.Now}> Quitting.");
 
       }
       catch (Exception ex)
       {
-        Console.WriteLine("ERROR> Exception ahoy! ");
+        Console.WriteLine($"ERROR {DateTime.Now}> Exception ahoy! ");
         Console.WriteLine(ex.Message);
       }
     }
@@ -299,13 +328,20 @@ namespace SimpleTwitchBot
       }
       this.twSettings = twSettings;
     }
+    
+    // untested
+    public string getUptime()
+    {
+      return (DateTime.Now.TimeOfDay - this.startTime.TimeOfDay).ToString();
+    }
+
 
     public void quit()
     {
       quitting = true;
     }
 
-    //Outside of start we need to define ValidateServerCertificate
+    // Outside of start we need to define ValidateServerCertificate
     private bool ValidateServerCertificate(object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors)
     {
       return sslPolicyErrors == SslPolicyErrors.None;
